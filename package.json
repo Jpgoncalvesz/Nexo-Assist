@@ -1,0 +1,46 @@
+{
+  "name": "nexo-assist",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:tickets\" \"npm:dev:web\"",
+    "dev:web": "next dev --hostname 127.0.0.1 --port 3100",
+    "dev:tickets": "tsx --env-file=.env services/tickets/server.ts",
+    "build": "next build",
+    "start": "concurrently -k \"npm:start:tickets\" \"npm:start:web\"",
+    "start:web": "next start --hostname 127.0.0.1 --port 3100",
+    "start:tickets": "tsx --env-file=.env services/tickets/server.ts",
+    "db:setup": "tsx --env-file=.env scripts/setup.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:service": "tsx --env-file=.env tests/tickets.integration.ts"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/newsreader": "^5.3.0",
+    "@fontsource/schibsted-grotesk": "^5.3.0",
+    "@langchain/langgraph": "latest",
+    "lucide-react": "latest",
+    "next": "latest",
+    "pg": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@types/node": "latest",
+    "@types/pg": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "concurrently": "latest",
+    "prettier": "^3.10.1",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  },
+  "type": "module"
+}
