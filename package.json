@@ -16,7 +16,10 @@
     "test:e2e": "playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:service": "tsx --env-file=.env tests/tickets.integration.ts"
+    "test:service": "tsx --env-file=.env tests/tickets.integration.ts",
+    "predev": "tsx --env-file=.env scripts/ensure-ollama.ts",
+    "prestart": "tsx --env-file=.env scripts/ensure-ollama.ts",
+    "test:llm": "tsx --env-file=.env scripts/evaluate-llm.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

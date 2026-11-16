@@ -71,7 +71,7 @@ async function handle(request: NextRequest) {
           status: r.ok ? 'ok' : 'degraded',
           database: 'ok',
           tickets: r.ok ? 'ok' : 'unavailable',
-          engine: 'deterministic',
+          engine: process.env.AGENT_MODE === 'ollama' ? 'ollama' : 'deterministic',
         },
         r.ok ? 200 : 503,
       );

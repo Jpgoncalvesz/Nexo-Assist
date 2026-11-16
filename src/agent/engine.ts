@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { interpret, needsInterpretation } from './llm';
 import { findDuplicate } from '../lib/duplicates';
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 import type {
@@ -53,12 +54,21 @@ export function priorityFor(
 ): Priority {
   const n = normalize(description + ' ' + urgency);
   const many = /equipe|empresa|todos|setor|departamento|varias|pessoas/.test(normalize(affected));
+  const hasAlternative =
+    /tenho alternativa|ha alternativa|consigo continuar|posso continuar|outro computador/.test(
+      normalize(urgency),
+    );
+  const deadlineToday =
+    /compromisso hoje|entrega hoje|prazo hoje|reuniao hoje|mesmo dia|daqui a/.test(n) &&
+    !/nao.*(compromisso|entrega|reuniao).*hoje/.test(n);
   const stopped =
-    /parad|nao (consigo|conseguimos|conseguem).*trabalhar|impede|sem alternativa|indisponivel|ninguem|nao funciona/.test(
+    !hasAlternative &&
+    /parad|parou|sem internet|nao (consigo|conseguimos|conseguem).*trabalhar|impede|sem alternativa|indisponivel|ninguem|nao funciona/.test(
       n,
     );
   if (many && stopped) return 'Crítica';
-  if (stopped || /hoje|mesmo dia|daqui a|reuniao.*hora|prazo.*dia/.test(n)) return 'Alta';
+  if (stopped || deadlineToday) return 'Alta';
+  if (hasAlternative) return 'Média';
   if (/alternativa|contornar|atrapalha|lent|intermitente/.test(n)) return 'Média';
   return type === 'REQ' ? 'Baixa' : 'Média';
 }
@@ -161,6 +171,17 @@ async function draftReply(
   if (match) {
     draft.operation = isResolved(match) ? 'reopen' : 'update';
     draft.ticketId = match.id;
+    draft.title = match.title;
+    draft.description = match.description + '\nNovo relato: ' + draft.description;
+    if (isOverdue(match))
+      return handoff(
+        { ...state, lastTicketId: match.id },
+        description,
+        'Já existe um chamado sobre o problema e seu prazo está vencido.',
+        gateway,
+        ownerId,
+        match,
+      );
   }
   const text = match
     ? 'Encontrei um chamado sobre o mesmo problema. Confira o rascunho para ' +
@@ -190,6 +211,18 @@ async function applyPolicy(
   gateway: TicketGateway,
 ): Promise<AgentResult> {
   const n = normalize(text.trim());
+  if (
+    !state.stage &&
+    /equipe|empresa|todos|setor|departamento/.test(n) &&
+    priorityFor(text, text, text, 'INC') === 'Crítica'
+  )
+    return handoff(
+      { description: text, affected: 'Equipe ou empresa', urgency: 'Parada informada' },
+      text,
+      'Equipe ou empresa parada: atendimento crítico com prazo de uma hora.',
+      gateway,
+      ownerId,
+    );
   if (/nao resolveu.*abrir chamado/.test(n) && state.description)
     return result(
       { description: state.description, stage: 'impact' },
@@ -198,7 +231,10 @@ async function applyPolicy(
       'A orientação anterior não resolveu; contexto preservado.',
       { options: ['Somente eu', 'Minha equipe', 'Toda a empresa'] },
     );
-  if (/analista|atendente|humano|pessoa real/.test(n))
+  if (
+    /analista|atendente|humano|pessoa real/.test(n) &&
+    !/nao (quero|preciso|desejo).*?(analista|atendente|humano)/.test(n)
+  )
     return handoff(state, text, 'Transferência solicitada pelo funcionário.', gateway, ownerId);
   if (
     /(^|\b)(rh|ferias|salario|holerite|reembolso|vale refeicao|facilities|ar condicionado|limpeza)(\b|$)/.test(
@@ -538,7 +574,52 @@ export async function runAgent(
   gateway: TicketGateway,
 ): Promise<AgentResult> {
   try {
-    return (await graph.invoke({ text, state, ownerId, gateway })).result;
+    let understood: Awaited<ReturnType<typeof interpret>> | undefined;
+    if (needsInterpretation(text, state)) {
+      try {
+        understood = await interpret(text, state);
+      } catch {
+        return handoff(
+          state,
+          text,
+          'O modelo local não está disponível ou retornou dados inválidos. Não tenho segurança para decidir.',
+          gateway,
+          ownerId,
+        );
+      }
+      if (understood.confidence < 0.75 || understood.intent === 'unknown')
+        return handoff(
+          state,
+          text,
+          'Não tenho segurança suficiente para interpretar esta mensagem.',
+          gateway,
+          ownerId,
+        );
+    }
+    const effective =
+      understood?.intent === 'human'
+        ? 'Falar com analista'
+        : understood?.intent === 'list' && !/\b(?:INC|REQ)-\d+/i.test(text)
+          ? 'Consultar meus chamados'
+          : understood?.intent === 'out_of_scope'
+            ? 'Assunto de RH: férias'
+            : (understood?.canonical ?? text);
+    const response = (await graph.invoke({ text: effective, state, ownerId, gateway })).result;
+    if (understood && response.message.decision) {
+      response.message.decision.engine = 'ollama';
+      response.message.decision.model = process.env.OLLAMA_MODEL ?? 'qwen2.5:3b';
+      response.message.decision.interpretation = understood.canonical;
+      response.message.decision.confidence = Math.min(
+        response.message.decision.confidence,
+        understood.confidence,
+      );
+      response.message.decision.reason =
+        understood.reason + ' Política aplicada: ' + response.message.decision.reason;
+      response.message.decision.actions.unshift('Interpretou a mensagem com LLM local');
+      if (response.state.description && !state.description)
+        response.state.description += '\nRelato original: ' + text;
+    }
+    return response;
   } catch {
     const failures = (state.failures || 0) + 1;
     if (failures >= 2)

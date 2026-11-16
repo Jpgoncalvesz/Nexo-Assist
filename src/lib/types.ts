@@ -42,7 +42,9 @@ export interface Decision {
   actions: string[];
   reason: string;
   rules: string[];
-  engine: 'deterministic';
+  engine: 'deterministic' | 'ollama';
+  model?: string;
+  interpretation?: string;
   elapsedMs?: number;
 }
 export interface Message {

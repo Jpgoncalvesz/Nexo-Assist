@@ -270,7 +270,18 @@ function MessageItem({
                 <dt>Regras consultadas</dt>
                 <dd>{message.decision.rules.join(' · ') || 'Fluxo de atendimento'}</dd>
                 <dt>Motor</dt>
-                <dd>Determinístico · respostas simuladas</dd>
+                <dd>
+                  {message.decision.engine === 'ollama'
+                    ? `LLM local · ${message.decision.model}`
+                    : 'Regras determinísticas'}{' '}
+                  — confiança heurística
+                </dd>
+                {message.decision.interpretation && (
+                  <>
+                    <dt>Interpretação</dt>
+                    <dd>{message.decision.interpretation}</dd>
+                  </>
+                )}
               </dl>
             </div>
           </details>
@@ -582,7 +593,10 @@ export default function Home() {
             </div>
             <div className="simulation-note">
               <ShieldCheck size={15} />
-              <span>Respostas simuladas por regras. Sem conexão com um modelo de IA.</span>
+              <span>
+                Dados fictícios. Interpretação por IA local quando habilitada; ações validadas pelas
+                regras do service desk.
+              </span>
             </div>
           </div>
           <footer>
@@ -782,7 +796,7 @@ export default function Home() {
           <span>
             {conversation ? `${conversation.messageCount}/30 mensagens nesta sessão` : ''}
           </span>
-          <span>Motor simulado · decisões rastreáveis</span>
+          <span>Decisões rastreáveis · você confirma as alterações</span>
         </div>
       </div>
     </>
